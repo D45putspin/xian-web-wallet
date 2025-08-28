@@ -17,6 +17,20 @@ function unlockWallet() {
         unencryptedPrivateKey = _unencryptedPrivateKey;
         publicKey = public_key;
         locked = false;
+        
+        // Store session key for quick restore and update session
+        if (typeof storeSessionKey === 'function') {
+            storeSessionKey(_unencryptedPrivateKey);
+        }
+        if (typeof updateSession === 'function') {
+            updateSession();
+        }
+        
+        // Update walletInfo in Chrome storage for dApp communication
+        if (typeof updateWalletInfo === 'function') {
+            updateWalletInfo();
+        }
+        
         changePage('wallet');
     });
 }

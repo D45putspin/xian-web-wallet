@@ -31,13 +31,14 @@ function acceptRequest() {
             if (response['result']['code'] == 1) {
                 window.opener.postMessage({type: 'REQUEST_TRANSACTION', data: {errors: [response['result']['log']]},callbackKey: callbackKey}, '*');
                 toast('danger', 'Error sending transaction: ' + response['result']['log']);
-                // Close the window
-                window.close();
+                // Close the window after a short delay to let user see the error
+                setTimeout(() => window.close(), 2000);
             }
             else {
                 window.opener.postMessage({type: 'REQUEST_TRANSACTION', data: {status: 'sent', txid: hash},callbackKey: callbackKey}, '*');
                 toast('success', 'Transaction sent: <a class="text-light" style=" text-overflow: ellipsis; width: 5rem; overflow: hidden; text-decoration: underline;margin-left: 0.25rem; " href="'+EXPLORER+'/tx/' + hash + '" target="_blank">' + hash + '</a>');
-                window.close();
+                // Close the window after a short delay to let user see the success message
+                setTimeout(() => window.close(), 2000);
             }
         }).catch((error) => {
             window.close();

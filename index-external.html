@@ -21,16 +21,45 @@
 
 
     <link rel="stylesheet" href="css/codemirror.css">
-    <script src="js/dark-mode.js?v=1"></script>
     <script src="js/external.js"></script>
 </head>
 
-<body class="dark-mode">
+<body class="dark-mode extension-popup" style="width: 400px; height: 600px; overflow: hidden;">
+    <style>
+    /* Extension popup optimizations */
+    .extension-popup .app-container { padding: 8px !important; width: 400px; height: 600px; }
+    .extension-popup .app-box { border: 0 !important; width: 384px; height: 584px; border-radius: 8px !important; }
+    .extension-popup .app-box-title { font-size: 1.25rem; margin-bottom: 12px; }
+    .extension-popup .form-group { margin-bottom: 12px; }
+    .extension-popup .btn-group { gap: 8px; }
+    .extension-popup .btn { padding: 8px 12px; font-size: 0.9rem; }
+    .extension-popup .side-nav { min-width: 160px; padding: 12px; }
+    .extension-popup .side-nav-item { padding: 6px 4px; font-size: 0.85rem; }
+    .extension-popup .token-item { padding: 8px; margin-bottom: 8px; }
+    .extension-popup .token-actions { gap: 6px; }
+    .extension-popup .token-actions .btn { padding: 4px 8px; font-size: 0.8rem; }
+    .extension-popup .form-control { font-size: 0.9rem; padding: 6px 8px; }
+    .extension-popup .onboard-wrapper { max-width: 340px; }
+    .extension-popup .onboard-btn-group { max-width: 300px; }
     
+    /* Lite Mode Toggle */
+    .lite-mode-toggle { position: fixed; top: 8px; right: 8px; z-index: 1100; }
+    .toggle-switch { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: #d8e4e4; }
+    .toggle-switch input { display: none; }
+    .toggle-slider { position: relative; width: 32px; height: 18px; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.15); border-radius: 999px; cursor: pointer; transition: all .15s ease; }
+    .toggle-slider::after { content: ""; position: absolute; top: 1px; left: 1px; width: 14px; height: 14px; background: #fff; border-radius: 999px; transition: transform .15s ease; }
+    .toggle-switch input:checked + .toggle-slider { background: linear-gradient(135deg, var(--accent) 0%, var(--accent-700) 60%); border-color: rgba(6,230,203,.35); }
+    .toggle-switch input:checked + .toggle-slider::after { transform: translateX(14px); }
+    </style>
 
-    <div class="app-container" style="padding: 0 !important;">
+    <!-- Persistent Open Full Wallet button (outside #app-box so it's not replaced) -->
+    <div style="position: fixed; top: 8px; right: 8px; z-index: 1100;">
+        <button id="openFull" class="btn btn-secondary">Advanced</button>
+    </div>
 
-        <div class="app-box" style="border:0!important">
+    <div class="app-container" style="padding: 8px !important; width: 400px; height: 600px;">
+
+        <div class="app-box" style="border:0!important; width: 384px; height: 584px; border-radius: 8px !important;">
             <div style="
 display: flex;
 
@@ -38,16 +67,15 @@ height: 100%;
 ">
                 <div style="
 display: flex;max-width: 100%; width: 100%;flex-direction: column;;
-" id="app-box">
-                </div>
+" id="app-box"></div>
             </div>
         </div>
     
     </div>
 
-    <button class="btn dark-mode-toggler d-none" id="darkModeToggler" title="Toggle Dark Mode">
-        <i class="fas fa-moon"></i> <!-- Default icon -->
-    </button>
+    
+
+    
 
     <script src="js/providers/bootstrap-bundle.min.js"></script>
     <script src="js/toaster.js"></script>
@@ -59,6 +87,7 @@ display: flex;max-width: 100%; width: 100%;flex-direction: column;;
     <script src="js/crypto-worker-manager.js"></script>
     <script src="js/pyodide-worker-manager.js"></script>
     <script src="js/xian.js?v=13237"></script>
+    <script src="js/wallet-manager.js?v=1"></script>
      <script src="js/providers/lucide.js"></script>
     <script src="js/router.js?v=133223272"></script>
     <script src="js/helpers.js"></script>

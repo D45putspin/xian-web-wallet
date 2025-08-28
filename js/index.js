@@ -30,6 +30,14 @@ if (document.getElementById('side-change-page-ide')) {
 
 if (document.getElementById('side-change-page-wallet')) {
 document.getElementById('side-change-page-wallet').addEventListener('click', function() {
+    // Ensure Lite Mode overlay is disabled and close any existing overlay
+    try {
+        localStorage.setItem('lite_mode_overlay', 'false');
+        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+            chrome.storage?.local?.set?.({ lite_mode_overlay: false });
+            chrome.runtime.sendMessage({ type: 'XIAN_OVERLAY_CLOSE' });
+        }
+    } catch (e) {}
     changePage('wallet');
 });
 }
@@ -66,6 +74,17 @@ function lockWallet() {
     // Locks the wallet
     unencryptedPrivateKey = null;
     locked = true;
+    
+    // Clear session on manual lock
+    if (typeof clearSession === 'function') {
+        clearSession();
+    }
+    
+    // Update walletInfo in Chrome storage for dApp communication
+    if (typeof updateWalletInfo === 'function') {
+        updateWalletInfo();
+    }
+    
     changePage('password-input');
 }
 

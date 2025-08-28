@@ -4,8 +4,144 @@ var publicKey = "";
 var unencryptedPrivateKey = null;
 var locked = true;
 var tx_history = JSON.parse(localStorage.getItem("tx_history")) || [];
+
+// Session management (persist session in chrome.storage.local with localStorage fallback)
+const SESSION_TIMEOUT_MINUTES = 30; // Keep unlocked for 30 minutes
+const SESSION_KEY = 'wallet_session';
+
+async function getSessionData(){
+  try {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local){
+      return await new Promise(resolve => chrome.storage.local.get(SESSION_KEY, data => resolve(data[SESSION_KEY] || {})));
+    }
+  } catch(e) {}
+  try { return JSON.parse(localStorage.getItem(SESSION_KEY) || '{}'); } catch(e) { return {}; }
+}
+
+async function setSessionData(sessionData){
+  try {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local){
+      await new Promise(resolve => chrome.storage.local.set({ [SESSION_KEY]: sessionData }, resolve));
+      return;
+    }
+  } catch(e) {}
+  try { localStorage.setItem(SESSION_KEY, JSON.stringify(sessionData)); } catch(e) {}
+}
+
+async function removeSessionData(){
+  try {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local){
+      await new Promise(resolve => chrome.storage.local.remove(SESSION_KEY, resolve));
+      return;
+    }
+  } catch(e) {}
+  try { localStorage.removeItem(SESSION_KEY); } catch(e) {}
+}
+
+async function isSessionValidAsync() {
+  try {
+    const sessionData = await getSessionData();
+    if (!sessionData.timestamp || !sessionData.publicKey) return false;
+    const now = Date.now();
+    const sessionAge = (now - sessionData.timestamp) / (1000 * 60); // minutes
+    return sessionAge < SESSION_TIMEOUT_MINUTES && sessionData.publicKey === publicKey;
+  } catch(e) {
+    return false;
+  }
+}
+
+async function updateSession() {
+  if (publicKey && !locked) {
+    try {
+      const existing = await getSessionData();
+      await setSessionData({ ...existing, timestamp: Date.now(), publicKey });
+    } catch(e) {}
+  }
+}
+
+// Update walletInfo in Chrome storage for dApp communication
+async function updateWalletInfo() {
+  try {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      const walletInfo = {
+        address: publicKey || '',
+        locked: !!locked,
+        chainId: (typeof CHAIN_ID !== 'undefined' ? CHAIN_ID : '') || ''
+      };
+      chrome.storage.local.set({ walletInfo });
+      console.log('Updated walletInfo in Chrome storage:', walletInfo);
+    }
+  } catch(e) {
+    console.error('Failed to update walletInfo:', e);
+  }
+}
+
+async function clearSession() {
+  await removeSessionData();
+}
+
+// Try to restore session without password if valid
+async function tryRestoreSession() {
+  if (!(await isSessionValidAsync())) return false;
+  
+  try {
+    const sessionData = await getSessionData();
+    const [storedPublicKey, storedEncryptedKey] = await Promise.all([
+      readSecureCookie('publicKey'),
+      readSecureCookie('encryptedPrivateKey')
+    ]);
+    
+    if (sessionData.publicKey === storedPublicKey && sessionData.unencryptedKey) {
+      // Convert hex string back to Uint8Array if needed
+      let restoredKey = sessionData.unencryptedKey;
+      if (typeof restoredKey === 'string') {
+        restoredKey = fromHexString(restoredKey);
+      }
+      
+      // Restore from session
+      unencryptedPrivateKey = restoredKey;
+      publicKey = storedPublicKey;
+      locked = false;
+      updateSession();
+      
+      // Update walletInfo in Chrome storage for dApp communication
+      if (typeof updateWalletInfo === 'function') {
+        updateWalletInfo();
+      }
+      
+      return true;
+    }
+  } catch(e) {
+    console.error('Session restore failed:', e);
+    await clearSession();
+  }
+  return false;
+}
+
+// Store encrypted private key in session for quick restore
+async function storeSessionKey(unencryptedKey) {
+  if (!publicKey || !unencryptedKey) return;
+  try {
+    // Convert Uint8Array to hex string for storage
+    let keyToStore = unencryptedKey;
+    if (unencryptedKey instanceof Uint8Array) {
+      keyToStore = toHexString(unencryptedKey);
+    }
+    
+    const sessionData = {
+      timestamp: Date.now(),
+      publicKey: publicKey,
+      unencryptedKey: keyToStore
+    };
+    await setSessionData(sessionData);
+    console.log('Session stored for wallet:', publicKey.substring(0, 8) + '...');
+  } catch(e) {
+    console.error('Failed to store session:', e);
+  }
+}
 var sendResponse = null;
-var externalWindow = null;
+var externalWindows = {}; // Track multiple external windows by type
+var lastExternal = { page: null, data: null, send_response: null };
 
 var callbacks = {};
 var callbackId = 0;
@@ -22,19 +158,23 @@ function popup_params(width, height) {
 }   
 
 function createExternalWindow(page, some_data = null, send_response = null) {
+  lastExternal = { page: page, data: some_data, send_response: send_response };
   const loadHtmlAndScripts = (htmlPath) => {
     fetch(htmlPath)
       .then((response) => response.text())
       .then((htmlContent) => {
-        if (!externalWindow || externalWindow.closed) {
-          externalWindow = window.open("index-external.html", "", "width=400,height=600," + popup_params(400, 600));
+        // Check if we already have a window for this page type
+        let targetWindow = externalWindows[page];
+        if (!targetWindow || targetWindow.closed) {
+          targetWindow = window.open("index-external.html", `xian-${page}`, "width=400,height=600," + popup_params(400, 600));
+          externalWindows[page] = targetWindow;
           
           let loaded = false;
-          externalWindow.onload = () => {
+          targetWindow.onload = () => {
             if (loaded) return; // Prevent duplicate onload execution
             loaded = true;
-            
-            externalWindow.postMessage({
+            try { targetWindow.__XIAN_EXTERNAL_REQUEST__ = true; } catch(e) {}
+            targetWindow.postMessage({
               type: "HTML",
               html: htmlContent
             }, "*");
@@ -43,8 +183,8 @@ function createExternalWindow(page, some_data = null, send_response = null) {
           };
         } else {
           // Reusing existing window
-          externalWindow.focus();
-          externalWindow.postMessage({
+          targetWindow.focus();
+          targetWindow.postMessage({
             type: "HTML",
             html: htmlContent
           }, "*");
@@ -55,13 +195,17 @@ function createExternalWindow(page, some_data = null, send_response = null) {
   };
 
   const sendInitialState = () => {
-    externalWindow.postMessage({
+    const targetWindow = externalWindows[page];
+    if (!targetWindow || targetWindow.closed) return;
+    targetWindow.postMessage({
       type: "INITIAL_STATE",
       state: { publicKey, unencryptedPrivateKey, locked, tx_history }
     }, "*");
   };
 
   const sendPageSpecificMessage = (page, some_data) => {
+    const targetWindow = externalWindows[page];
+    if (!targetWindow || targetWindow.closed) return;
     if (send_response) {
       const callbackKey = 'callback_' + (callbackId++);
       callbacks[callbackKey] = send_response;
@@ -75,7 +219,7 @@ function createExternalWindow(page, some_data = null, send_response = null) {
         type = "REQUEST_TOKEN";
       }
       if (type) {
-        externalWindow.postMessage({
+        targetWindow.postMessage({
           type: type,
           data: JSON.parse(JSON.stringify(some_data)),
           callbackKey: callbackKey
@@ -99,6 +243,49 @@ function createExternalWindow(page, some_data = null, send_response = null) {
   }
 }
 
+// Handshake from external window ensures scripts/listeners are ready before we push content
+window.addEventListener('message', (evt) => {
+  if (evt && evt.data && evt.data.type === 'EXTERNAL_READY') {
+    console.log('Main window received EXTERNAL_READY, sending content...');
+    try {
+      // Find which window sent the ready message
+      let readyWindow = null;
+      let readyPage = null;
+      for (const [page, win] of Object.entries(externalWindows)) {
+        if (win && !win.closed && win === evt.source) {
+          readyWindow = win;
+          readyPage = page;
+          break;
+        }
+      }
+      if (!readyWindow || !readyPage) return;
+      // Re-send HTML and initial state for the ready window's page
+      const map = {
+        'request-transaction': 'templates/request-transaction.html',
+        'request-signature': 'templates/request-signature.html',
+        'request-token': 'templates/request-token.html'
+      };
+      const htmlPath = map[readyPage];
+      if (!htmlPath) return;
+      fetch(htmlPath)
+        .then((response) => response.text())
+        .then((htmlContent) => {
+          readyWindow.postMessage({ type: 'HTML', html: htmlContent }, '*');
+          readyWindow.postMessage({ type: 'INITIAL_STATE', state: { publicKey, unencryptedPrivateKey, locked, tx_history } }, '*');
+          let type = '';
+          if (readyPage === 'request-transaction') type = 'REQUEST_TRANSACTION';
+          else if (readyPage === 'request-signature') type = 'REQUEST_SIGNATURE';
+          else if (readyPage === 'request-token') type = 'REQUEST_TOKEN';
+          if (type && lastExternal.send_response) {
+            const callbackKey = 'callback_' + (callbackId++);
+            callbacks[callbackKey] = lastExternal.send_response;
+            readyWindow.postMessage({ type, data: JSON.parse(JSON.stringify(lastExternal.data)), callbackKey }, '*');
+          }
+        });
+    } catch(e) {}
+  }
+});
+
 window.addEventListener("message", (event) => {
   if (event.data.type === "REQUEST_TRANSACTION") {
     const some_data = event.data.data;
@@ -107,10 +294,8 @@ window.addEventListener("message", (event) => {
       callbacks[callbackKey](event.data.data);
       delete callbacks[callbackKey];
     }
-    tx_history = JSON.parse(localStorage.getItem("tx_history")) || [];
-    if (app_page == "wallet"){
-      changePage("wallet");
-  }
+    // Do not auto-navigate the main app upon request completion to avoid UX jumps
+    try { tx_history = JSON.parse(localStorage.getItem("tx_history")) || []; } catch(_) { tx_history = []; }
   }
   if (event.data.type === "REQUEST_SIGNATURE") {
     const some_data = event.data.data;
@@ -192,7 +377,7 @@ function sideNavActive() {
 }
 
 function changePage(page, some_data = null, send_response = null) {
-  sendEventGA("page_view", {engagement_time_msec: 100, page_title: page, page_location: page});
+  try { if (typeof sendEventGA === 'function') sendEventGA("page_view", {engagement_time_msec: 100, page_title: page, page_location: page}); } catch(_) {}
   app_page = page;
   sideNavActive();
   const loadHtmlAndScripts = (htmlPath) => {
@@ -370,20 +555,78 @@ document.addEventListener("DOMContentLoaded", (event) => {
     readSecureCookie("publicKey"),
     readSecureCookie("encryptedPrivateKey"),
   ]).then((values) => {
+  // Set global publicKey for session validation
+  publicKey = values[0] || '';
+  
+  // Check if this is a background tab handling dApp requests
+  let isBackgroundDappTab = !document.hasFocus() && document.visibilityState === 'hidden';
+  let didNavigateOnVisible = false;
+  const navigateWhenVisible = (targetPage) => {
+    if (didNavigateOnVisible) return;
+    const handler = () => {
+      if (document.visibilityState === 'visible' || document.hasFocus()) {
+        if (!didNavigateOnVisible) {
+          didNavigateOnVisible = true;
+          try { changePage(targetPage); } catch(e) {}
+        }
+        document.removeEventListener('visibilitychange', handler);
+        window.removeEventListener('focus', handler);
+      }
+    };
+    document.addEventListener('visibilitychange', handler);
+    window.addEventListener('focus', handler);
+  };
+  
   if (
     values[0] &&
     values[1] &&
     unencryptedPrivateKey != null
   ) {
-    changePage("wallet");
+    updateSession();
+    // Don't auto-navigate to wallet if this is a background dApp handling tab
+    if (!isBackgroundDappTab) {
+      changePage("wallet");
+    } else {
+      navigateWhenVisible("wallet");
+    }
   } else if (
     values[0] &&
     values[1] &&
     unencryptedPrivateKey == null
   ) {
-    changePage("password-input");
+    // Check if we have a valid session to skip password input
+    console.log('Checking session for wallet:', values[0] ? values[0].substring(0, 8) + '...' : 'none');
+    tryRestoreSession().then(restored => {
+      if (restored) {
+        console.log('Session restored successfully');
+        // Don't auto-navigate to wallet if this is a background dApp handling tab
+        if (!isBackgroundDappTab) {
+          changePage("wallet");
+        } else {
+          navigateWhenVisible("wallet");
+        }
+      } else {
+        console.log('Session restore failed, going to password input');
+        if (!isBackgroundDappTab) {
+          changePage("password-input");
+        } else {
+          navigateWhenVisible("password-input");
+        }
+      }
+    }).catch((e) => {
+      console.error('Session restore error:', e);
+      if (!isBackgroundDappTab) {
+        changePage("password-input");
+      } else {
+        navigateWhenVisible("password-input");
+      }
+    });
   } else {
-    changePage("get-started");
+    if (!isBackgroundDappTab) {
+      changePage("get-started");
+    } else {
+      navigateWhenVisible("get-started");
+    }
   }
   });
 

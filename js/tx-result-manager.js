@@ -35,7 +35,8 @@ async function updateTxHistory() {
     }
     if (historyUpdated) {
         localStorage.setItem("tx_history", JSON.stringify(tx_history));
-        if (app_page == "wallet"){
+        // Only refresh wallet page if it's currently visible and focused
+        if (app_page == "wallet" && document.hasFocus() && document.visibilityState === 'visible'){
             changePage("wallet");
         }
     }

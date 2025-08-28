@@ -1,27 +1,46 @@
 {
-    "name": "Xian Wallet",
-    "version": "2.80",
-    "description": "A cutting-edge self-custodial web3 wallet for the Xian Network",
-    "manifest_version": 3,
-    "action": {
-        "default_icon": "assets/logo.png"
-    },
-    "icons": {
-        "48": "assets/logo.png"
-    },
-    "background": {
-        "service_worker": "background.js"
-    },
-    "content_scripts": [
-        {
-          "matches": ["<all_urls>"],
-          "run_at": "document_end",
-          "all_frames": true,
-          "js": ["content.js"]
-        }
+  "name": "Xian Wallet",
+  "version": "2.80",
+  "description": "A cutting-edge self-custodial web3 wallet for the Xian Network",
+  "manifest_version": 3,
+  "action": {
+    "default_icon": "assets/logo.png",
+    "default_popup": "index-external.html"
+  },
+  "icons": {
+    "48": "assets/logo.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "index-external.html",
+        "assets/*",
+        "css/*",
+        "css/fonts/*",
+        "js/*",
+        "js/providers/*",
+        "js/providers/pyodide-0.25.1/*",
+        "js/workers/*",
+        "templates/*",
+        "templates/page_js/*",
+        "python3-dist/*"
       ],
-    "permissions": ["storage"],
-    "content_security_policy": {
-      "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+      "matches": ["<all_urls>"]
     }
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "run_at": "document_end",
+      "all_frames": true,
+      "js": ["content.js"]
+    }
+  ],
+  "permissions": ["storage"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   }
+}

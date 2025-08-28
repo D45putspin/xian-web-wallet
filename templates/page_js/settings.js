@@ -236,6 +236,28 @@ function loadSettingsPage() {
     // Get the rpc from local storage and find the select element with the value and set it to selected
     document.querySelector('#rpc_select').value = RPC + ',' + EXPLORER;
 
+    // Set the Lite Mode toggle from localStorage
+    try {
+        let liteToggle = document.getElementById('lite_mode_overlay');
+        if (liteToggle) {
+            // Initialize from chrome.storage.local first, fallback to localStorage
+            try {
+                chrome.storage.local.get('lite_mode_overlay', (res) => {
+                    let liteMode = (typeof res.lite_mode_overlay !== 'undefined') ? !!res.lite_mode_overlay : (localStorage.getItem('lite_mode_overlay') === 'true');
+                    liteToggle.checked = liteMode;
+                });
+            } catch (e) {
+                liteToggle.checked = localStorage.getItem('lite_mode_overlay') === 'true';
+            }
+
+            liteToggle.addEventListener('change', function() {
+                const value = this.checked ? 'true' : 'false';
+                localStorage.setItem('lite_mode_overlay', value);
+                try { chrome.storage.local.set({ lite_mode_overlay: this.checked }); } catch (e) {}
+            });
+        }
+    } catch (e) {}
+
     // Get the wallet version from the manifest file (two directories up) and set it in the settings page
     let manifest = JSON.parse(readTextFile('../../manifest.json'));
     document.getElementById('version').innerHTML = manifest.version;

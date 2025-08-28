@@ -38,6 +38,12 @@ function importWallet() {
     unencryptedPrivateKey = _unencryptedPrivateKey;
     publicKey = public_key;
     locked = false;
+    
+    // Update walletInfo in Chrome storage for dApp communication
+    if (typeof updateWalletInfo === 'function') {
+        updateWalletInfo();
+    }
+    
     changePage('wallet');
 }
 
